@@ -1,0 +1,311 @@
+-- ==========================================
+-- WindUI : Lucky Block BG (SkidFling + Custom Spawn)
+-- ==========================================
+local WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+-- ตั้งค่าเริ่มต้นเป็นภาษาอังกฤษ
+local CurrentLanguage = "EN"
+
+local Translations = {
+    EN = { 
+        WindowTitle = "Lucky Block BG | Pro", 
+        TabMain = "Main", TabMove = "Movement", TabCombat = "Combat", TabVisual = "Visuals", TabSettings = "Settings", 
+        SpamSpawnTitle = "Instant Spawn All", SpawnOneTitle = "Spawn Lucky Block", 
+        CustomSpawnTitle = "Custom Spawn Amount", 
+        SpeedToggle = "Speed", JumpToggle = "Jump", FlyToggle = "Fly", NoclipToggle = "Noclip", 
+        ESPToggle = "Player ESP", 
+        GodModeTitle = "God Mode", GodModeDesc = "Block 100% damage",
+        FlingTitle = "Auto Fling", FlingDesc = "Fling players away automatically",
+        FlingRange = "Fling Range (Studs)"
+    },
+    TH = { 
+        WindowTitle = "ลัคกี้บล็อค BG | โปร", 
+        TabMain = "เมนูหลัก", TabMove = "การเคลื่อนที่", TabCombat = "การต่อสู้", TabVisual = "การมองเห็น", TabSettings = "ตั้งค่า", 
+        SpamSpawnTitle = "เสกของทั้งหมด", SpawnOneTitle = "เสก Lucky Block", 
+        CustomSpawnTitle = "เสกของตามจำนวน",
+        SpeedToggle = "Speed", JumpToggle = "Jump", FlyToggle = "Fly", NoclipToggle = "Noclip", 
+        ESPToggle = "ESP มองเห็นทุกคน", 
+        GodModeTitle = "God Mode (อมตะ)", GodModeDesc = "บล็อคดาเมจ 100%",
+        FlingTitle = "Fling (ผลักปลิว)", FlingDesc = "ผลักศัตรูให้ลอยละลิ่ว",
+        FlingRange = "ระยะการผลัก (Studs)"
+    }
+}
+
+-- ตัวแปรสถานะ
+local isSpamSpawn = false
+local isSpeedEnabled, speedValue = false, 16
+local isJumpEnabled, jumpValue = false, 50
+local isFlyEnabled, flySpeed = false, 60
+local isNoclipEnabled = false
+local isGodModeEnabled = false
+local espEnabled, espObjects = false, {}
+
+-- ตัวแปร Fling
+local isFlingEnabled = false
+local flingRange = 15
+local isFlinging = false
+local flingCooldown = false
+
+local CurrentWindow = nil
+local function BuildUI()
+    if CurrentWindow then CurrentWindow:Destroy() end
+    local T = Translations[CurrentLanguage]
+    
+    CurrentWindow = WindUI:CreateWindow({ 
+        Title = T.WindowTitle, Icon = "box", Author = "By KitKat", 
+        Folder = "LuckyBlockBG", Size = UDim2.fromOffset(500, 400), Theme = "Dark" 
+    })
+
+    -- ==================== Main ====================
+    local MainTab = CurrentWindow:Tab({ Title = T.TabMain, Icon = "home" })
+    MainTab:Toggle({ Title = T.SpamSpawnTitle, Value = isSpamSpawn, Callback = function(Value)
+        isSpamSpawn = Value
+        if isSpamSpawn then task.spawn(function() while isSpamSpawn do for i=1,3 do pcall(function() ReplicatedStorage:WaitForChild("SpawnLuckyBlock"):FireServer() end) end task.wait(0.05) end end) end
+    end })
+    
+    MainTab:Button({ Title = T.SpawnOneTitle, Callback = function() pcall(function() ReplicatedStorage:WaitForChild("SpawnLuckyBlock"):FireServer() end) end })
+
+    -- ระบบ Custom Spawn
+    local customAmount = 10
+    MainTab:Input({
+        Title = T.CustomSpawnTitle,
+        Value = "10", -- ค่าเริ่มต้น
+        Placeholder = "ใส่จำนวนที่ต้องการเสก (เช่น 10, 50)",
+        Callback = function(text)
+            local num = tonumber(text)
+            if num then customAmount = num end
+        end
+    })
+
+    MainTab:Button({
+        Title = "Spawn Custom Amount (เสกตามจำนวน)",
+        Callback = function()
+            task.spawn(function()
+                for i = 1, customAmount do
+                    pcall(function()
+                        ReplicatedStorage:WaitForChild("SpawnLuckyBlock"):FireServer()
+                    end)
+                    task.wait(0.05) -- หน่วงเวลานิดนึงเพื่อไม่ให้เซิร์ฟเวอร์รับไม่ไหว
+                end
+                WindUI:Notify({ Title = "Success", Content = "Spawned " .. customAmount .. " items!", Duration = 2 })
+            end)
+        end
+    })
+
+    -- ==================== Combat ====================
+    local CombatTab = CurrentWindow:Tab({ Title = T.TabCombat, Icon = "crosshair" })
+    CombatTab:Toggle({ Title = T.FlingTitle, Desc = T.FlingDesc, Value = isFlingEnabled, Callback = function(state) isFlingEnabled = state end })
+    CombatTab:Slider({ Title = T.FlingRange, Value = { Min = 5, Max = 50, Default = flingRange }, Callback = function(Value) flingRange = Value end })
+
+    -- ==================== Movement ====================
+    local MoveTab = CurrentWindow:Tab({ Title = T.TabMove, Icon = "activity" })
+    MoveTab:Toggle({ Title = T.SpeedToggle, Value = isSpeedEnabled, Callback = function(state) isSpeedEnabled = state end })
+    MoveTab:Slider({ Title = T.SpeedToggle, Value = { Min = 16, Max = 200, Default = speedValue }, Callback = function(Value) speedValue = Value end })
+    MoveTab:Toggle({ Title = T.JumpToggle, Value = isJumpEnabled, Callback = function(state) isJumpEnabled = state end })
+    MoveTab:Slider({ Title = T.JumpToggle, Value = { Min = 50, Max = 500, Default = jumpValue }, Callback = function(Value) jumpValue = Value end })
+    MoveTab:Toggle({ Title = T.NoclipToggle, Value = isNoclipEnabled, Callback = function(state) isNoclipEnabled = state end })
+    
+    MoveTab:Toggle({ Title = T.FlyToggle, Value = isFlyEnabled, Callback = function(state)
+        isFlyEnabled = state
+        local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+        if state then
+            local att = Instance.new("Attachment", hrp); att.Name = "FlyAttachment"
+            local align = Instance.new("AlignPosition", hrp); align.Name = "FlyAlign"; align.Attachment0 = att; align.Mode = Enum.PositionAlignmentMode.OneAttachment; align.MaxForce = 100000; align.Responsiveness = 50; align.Position = hrp.Position
+        else
+            local att = hrp:FindFirstChild("FlyAttachment"); local align = hrp:FindFirstChild("FlyAlign")
+            if att then att:Destroy() end; if align then align:Destroy() end
+        end
+    end })
+    MoveTab:Slider({ Title = T.FlyToggle, Value = { Min = 20, Max = 300, Default = flySpeed }, Callback = function(Value) flySpeed = Value end })
+
+    -- ==================== Visuals ====================
+    local VisualTab = CurrentWindow:Tab({ Title = T.TabVisual, Icon = "eye" })
+    VisualTab:Toggle({ Title = T.ESPToggle, Value = espEnabled, Callback = function(state)
+        espEnabled = state
+        if espEnabled then for _, p in pairs(Players:GetPlayers()) do enableESP(p) end else disableESP() end
+    end })
+    VisualTab:Toggle({ Title = T.GodModeTitle, Desc = T.GodModeDesc, Value = isGodModeEnabled, Callback = function(state) isGodModeEnabled = state end })
+
+    -- ==================== Settings ====================
+    local SettingsTab = CurrentWindow:Tab({ Title = T.TabSettings, Icon = "settings" })
+    SettingsTab:Button({ Title = "Switch to Thai (ภาษาไทย)", Callback = function() CurrentLanguage = "TH"; BuildUI() end })
+    SettingsTab:Button({ Title = "English (Current)", Callback = function() CurrentLanguage = "EN"; BuildUI() end })
+end
+
+BuildUI()
+
+-- ==========================================
+-- ระบบ SkidFling
+-- ==========================================
+local function SkidFling(TargetPlayer)
+    if not TargetPlayer or TargetPlayer == LocalPlayer then return end
+    local Character = LocalPlayer.Character
+    local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
+    local RootPart = Humanoid and Humanoid.RootPart
+
+    local TCharacter = TargetPlayer.Character
+    if not TCharacter then return end
+    local THumanoid = TCharacter:FindFirstChildOfClass("Humanoid")
+    local TRootPart = THumanoid and THumanoid.RootPart
+    local THead = TCharacter:FindFirstChild("Head")
+    local Accessory = TCharacter:FindFirstChildOfClass("Accessory")
+    local Handle = Accessory and Accessory:FindFirstChild("Handle")
+
+    if Character and Humanoid and RootPart then
+        if RootPart.Velocity.Magnitude < 50 then getgenv().OldPos = RootPart.CFrame end
+        if THumanoid and THumanoid.Sit then return end
+        
+        if THead then workspace.CurrentCamera.CameraSubject = THead
+        elseif not THead and Handle then workspace.CurrentCamera.CameraSubject = Handle
+        elseif THumanoid and TRootPart then workspace.CurrentCamera.CameraSubject = THumanoid end
+        
+        if not TCharacter:FindFirstChildWhichIsA("BasePart") then return end
+        
+        local FPos = function(BasePart, Pos, Ang)
+            RootPart.CFrame = CFrame.new(BasePart.Position) * Pos * Ang
+            Character:SetPrimaryPartCFrame(CFrame.new(BasePart.Position) * Pos * Ang)
+            RootPart.Velocity = Vector3.new(9e7, 9e7 * 10, 9e7)
+            RootPart.RotVelocity = Vector3.new(9e8, 9e8, 9e8)
+        end
+        
+        local SFBasePart = function(BasePart)
+            local TimeToWait = 2
+            local Time = tick()
+            local Angle = 0
+            repeat
+                if RootPart and THumanoid then
+                    if BasePart.Velocity.Magnitude < 50 then
+                        Angle = Angle + 100
+                        FPos(BasePart, CFrame.new(0, 1.5, 0) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle),0 ,0))
+                        task.wait()
+                        FPos(BasePart, CFrame.new(0, -1.5, 0) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle), 0, 0))
+                        task.wait()
+                        FPos(BasePart, CFrame.new(2.25, 1.5, -2.25) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle), 0, 0))
+                        task.wait()
+                        FPos(BasePart, CFrame.new(-2.25, -1.5, 2.25) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle), 0, 0))
+                        task.wait()
+                    else
+                        FPos(BasePart, CFrame.new(0, 1.5, THumanoid.WalkSpeed), CFrame.Angles(math.rad(90), 0, 0))
+                        task.wait()
+                        FPos(BasePart, CFrame.new(0, -1.5, -THumanoid.WalkSpeed), CFrame.Angles(0, 0, 0))
+                        task.wait()
+                        FPos(BasePart, CFrame.new(0, 1.5, THumanoid.WalkSpeed), CFrame.Angles(math.rad(90), 0, 0))
+                        task.wait()
+                    end
+                else break end
+            until BasePart.Velocity.Magnitude > 500 or BasePart.Parent ~= TargetPlayer.Character or TargetPlayer.Parent ~= Players or not TargetPlayer.Character == TCharacter or THumanoid.Sit or Humanoid.Health <= 0 or tick() > Time + TimeToWait
+        end
+        
+        local OldFPDH = workspace.FallenPartsDestroyHeight
+        workspace.FallenPartsDestroyHeight = 0/0
+        
+        local BV = Instance.new("BodyVelocity")
+        BV.Name = "EpixVel"
+        BV.Parent = RootPart
+        BV.Velocity = Vector3.new(9e8, 9e8, 9e8)
+        BV.MaxForce = Vector3.new(1/0, 1/0, 1/0)
+        
+        Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
+        
+        if TRootPart and THead then
+            if (TRootPart.CFrame.p - THead.CFrame.p).Magnitude > 5 then SFBasePart(THead) else SFBasePart(TRootPart) end
+        elseif TRootPart and not THead then SFBasePart(TRootPart)
+        elseif not TRootPart and THead then SFBasePart(THead)
+        elseif not TRootPart and not THead and Accessory and Handle then SFBasePart(Handle) end
+        
+        BV:Destroy()
+        Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
+        workspace.CurrentCamera.CameraSubject = Humanoid
+        
+        repeat
+            RootPart.CFrame = getgenv().OldPos * CFrame.new(0, .5, 0)
+            Character:SetPrimaryPartCFrame(getgenv().OldPos * CFrame.new(0, .5, 0))
+            Humanoid:ChangeState("GettingUp")
+            for _, x in pairs(Character:GetChildren()) do
+                if x:IsA("BasePart") then x.Velocity, x.RotVelocity = Vector3.new(), Vector3.new() end
+            end
+            task.wait()
+        until (RootPart.Position - getgenv().OldPos.p).Magnitude < 25
+        workspace.FallenPartsDestroyHeight = OldFPDH
+    end
+end
+
+-- ==========================================
+-- ลูปการทำงานหลัก
+-- ==========================================
+local flyPos = Vector3.new(0,0,0)
+
+RunService.Heartbeat:Connect(function()
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hum or not hrp then return end
+
+    if isSpeedEnabled and hum.WalkSpeed ~= speedValue then hum.WalkSpeed = speedValue end
+    if isJumpEnabled and hum.JumpPower ~= jumpValue then hum.UseJumpPower = true; hum.JumpPower = jumpValue end
+    if isNoclipEnabled then for _, v in pairs(char:GetDescendants()) do if v:IsA("BasePart") then v.CanCollide = false end end end
+    if isGodModeEnabled then
+        if hum.Health < hum.MaxHealth then hum.Health = hum.MaxHealth end
+        if hum.Health <= 0 then hum.Health = hum.MaxHealth end
+    end
+
+    if isFlyEnabled then
+        local align = hrp:FindFirstChild("FlyAlign")
+        if align then
+            local moveDir = Vector3.new(0,0,0)
+            local camCFrame = workspace.CurrentCamera.CFrame
+            if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + camCFrame.LookVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - camCFrame.LookVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - camCFrame.RightVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + camCFrame.RightVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveDir = moveDir + Vector3.new(0,1,0) end
+            if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then moveDir = moveDir - Vector3.new(0,1,0) end
+            if moveDir.Magnitude > 0 then flyPos = flyPos + (moveDir.Unit * flySpeed * RunService.Heartbeat:Wait()) end
+            align.Position = flyPos
+        end
+    end
+
+    if isFlingEnabled and not isFlinging and not flingCooldown then
+        for _, p in pairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                local dist = (p.Character.HumanoidRootPart.Position - hrp.Position).Magnitude
+                if dist <= flingRange then
+                    isFlinging = true
+                    flingCooldown = true
+                    SkidFling(p)
+                    isFlinging = false
+                    task.wait(1)
+                    flingCooldown = false
+                    break
+                end
+            end
+        end
+    end
+end)
+
+-- ระบบ ESP 
+local function enableESP(targetPlayer)
+    if targetPlayer == LocalPlayer then return end
+    local function applyHighlight(character)
+        if not character or character:FindFirstChild("ESP_Highlight") then return end
+        local highlight = Instance.new("Highlight")
+        highlight.Name = "ESP_Highlight"; highlight.Adornee = character
+        highlight.FillColor = Color3.fromRGB(255, 0, 0); highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+        highlight.FillTransparency = 0.5; highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop; highlight.Parent = character
+    end
+    if targetPlayer.Character then applyHighlight(targetPlayer.Character) end
+    espObjects[targetPlayer] = targetPlayer.CharacterAdded:Connect(applyHighlight)
+end
+local function disableESP()
+    for player, connection in pairs(espObjects) do if connection then connection:Disconnect() end end
+    for _, obj in pairs(workspace:GetDescendants()) do if obj.Name == "ESP_Highlight" then obj:Destroy() end end
+    espObjects = {}
+end
